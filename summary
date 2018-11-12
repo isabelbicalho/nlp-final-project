@@ -1,0 +1,4 @@
+MaskGAN: Better Text Generation Via Filling in the ______
+-------------------------------------------------------------------------------------------------------
+* text generation models generate text by sampling words sequentially. they are used for several machine
+translation and summarization benchmarks. 
