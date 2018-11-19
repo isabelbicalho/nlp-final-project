@@ -12,7 +12,7 @@ def read_input(filename, sep, X_title, y_title):
         if type(X[i]) != str:
             X = np.delete(X, i)
             y = np.delete(y, i)
-    return X, y
+    return X, y.astype(np.int32) -1
 
 
 def split_input(X, y, test_size):
@@ -20,8 +20,16 @@ def split_input(X, y, test_size):
 
 
 def convert_to_one_hot(Y, C):
-    Y = np.eye(C)[Y.reshape(-1)]
-    return Y
+    # import pdb; pdb.set_trace()
+    # Y = np.eye(C)[Y.reshape(-1)]
+    # return Y
+    cat_sequences = []
+    for y in Y:
+        cats = []
+        cats.append(np.zeros(C))
+        cats[-1][y] = 1.0
+        cat_sequences.append(cats)
+    return np.array(cat_sequences)
 
 
 def sentences_to_indices(X, word_to_index, max_len):
@@ -53,8 +61,13 @@ def sentences_to_indices(X, word_to_index, max_len):
         
         # Loop over the words of sentence_words
         for w in sentence_words:
+            if j >= max_len:
+                break
             # Set the (i,j)th entry of X_indices to the index of the correct word.
-            X_indices[i, j] = word_to_index[w]
+            try:
+                X_indices[i, j] = word_to_index[w]
+            except KeyError:
+                X_indices[i, j] = word_to_index['-OOV-']
             # Increment j to j + 1
             j = j + 1
             
