@@ -8,15 +8,16 @@ def read_input(filename, sep, X_title, y_title):
     corpus = pd.read_csv(filename, sep=sep)
     X = corpus.get(X_title).values
     y = corpus.get(y_title).values
+    import pdb; pdb.set_trace()
     for i in range(len(X)-1):
-        if type(X[i]) != str:
+        if type(X[i]) != str or np.isnan(y[i]):
             X = np.delete(X, i)
             y = np.delete(y, i)
-    return X, y.astype(np.int32) -1
+    return X, y
 
 
 def split_input(X, y, test_size):
-    return train_test_split(X, y, test_size=test_size, shuffle=True)
+    return train_test_split(X, y, test_size=test_size, shuffle=False)
 
 
 def convert_to_one_hot(Y, C):
@@ -24,11 +25,16 @@ def convert_to_one_hot(Y, C):
     # Y = np.eye(C)[Y.reshape(-1)]
     # return Y
     cat_sequences = []
-    for y in Y:
-        cats = []
-        cats.append(np.zeros(C))
-        cats[-1][y] = 1.0
-        cat_sequences.append(cats)
+    import pdb; pdb.set_trace()
+    for i, y in enumerate(Y):
+        try:
+            cats = np.zeros(C)
+            cats[y] = 1.0
+            cat_sequences.append(cats)
+        except:
+            import pdb; pdb.set_trace()
+            print (y)
+    import pdb; pdb.set_trace()
     return np.array(cat_sequences)
 
 

@@ -12,8 +12,11 @@ np.random.seed(1)
 
 X, y = read_input("../data/consumer_reviews_of_amazon_products.csv", sep=",", X_title="reviews.text", y_title="reviews.rating")
 
+import pdb; pdb.set_trace()
 X_train, X_test, y_train, y_test = split_input(X, y, test_size=0.1)
 
+y_train = y_train.astype(np.int32) - 1
+y_test  = y_test.astype(np.int32) - 1
 max_len = len(max(X_train, key=len).split())
 max_len = 500
 print ("MAX_LENGTH = {}".format(max_len))
