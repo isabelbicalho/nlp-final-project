@@ -3,16 +3,9 @@ from utils import *
 
 import numpy as np
 np.random.seed(0)
-from keras.models import Model
-from keras.layers import Dense, Input, Dropout, LSTM, Activation
-from keras.layers.embeddings import Embedding
-from keras.preprocessing import sequence
-from keras.initializers import glorot_uniform
-np.random.seed(1)
 
 X, y = read_input("../data/consumer_reviews_of_amazon_products.csv", sep=",", X_title="reviews.text", y_title="reviews.rating")
 
-import pdb; pdb.set_trace()
 X_train, X_test, y_train, y_test = split_input(X, y, test_size=0.1)
 
 y_train = y_train.astype(np.int32) - 1

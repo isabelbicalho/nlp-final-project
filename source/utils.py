@@ -1,40 +1,43 @@
 import pandas as pd
 import numpy as np
+import re
 
 from sklearn.model_selection import train_test_split
+from keras.models import Model
+from keras.layers import Dense, Input, Dropout, LSTM, Activation
+from keras.layers.embeddings import Embedding
+from keras.preprocessing import sequence
+from keras.initializers import glorot_uniform
+
 
 
 def read_input(filename, sep, X_title, y_title):
     corpus = pd.read_csv(filename, sep=sep)
     X = corpus.get(X_title).values
     y = corpus.get(y_title).values
-    import pdb; pdb.set_trace()
+    i_list = []
     for i in range(len(X)-1):
         if type(X[i]) != str or np.isnan(y[i]):
-            X = np.delete(X, i)
-            y = np.delete(y, i)
+            i_list.append(i)
+    X = np.delete(X, i_list)
+    y = np.delete(y, i_list)
+    for x in X:
+        x = re.sub(r"[^a-zA-Z0-9]+", ' ', x)
     return X, y
 
 
 def split_input(X, y, test_size):
-    return train_test_split(X, y, test_size=test_size, shuffle=False)
+    return train_test_split(X, y, test_size=test_size, shuffle=True)
 
 
 def convert_to_one_hot(Y, C):
-    # import pdb; pdb.set_trace()
     # Y = np.eye(C)[Y.reshape(-1)]
     # return Y
     cat_sequences = []
-    import pdb; pdb.set_trace()
     for i, y in enumerate(Y):
-        try:
-            cats = np.zeros(C)
-            cats[y] = 1.0
-            cat_sequences.append(cats)
-        except:
-            import pdb; pdb.set_trace()
-            print (y)
-    import pdb; pdb.set_trace()
+        cats = np.zeros(C)
+        cats[y] = 1.0
+        cat_sequences.append(cats)
     return np.array(cat_sequences)
 
 
