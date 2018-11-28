@@ -1,12 +1,13 @@
 import numpy as np
+import keras
 from utils import *
 
 import numpy as np
-np.random.seed(0)
+np.random.seed(1)
 
 X, y = read_input("../data/consumer_reviews_of_amazon_products.csv", sep=",", X_title="reviews.text", y_title="reviews.rating")
 
-X_train, X_test, y_train, y_test = split_input(X, y, test_size=0.1)
+X_train, X_test, y_train, y_test = split_input(X, y, test_size=0.2)
 
 y_train = y_train.astype(np.int32) - 1
 y_test  = y_test.astype(np.int32) - 1
@@ -27,16 +28,16 @@ model = build_model((max_len,), word_to_index)
 print (model.summary())
 
 print ("Compiling model...")
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy', fmeasure, precision, recall])
 
 print ("Training model...")
-model.fit(X_train_indices, y_oh_train, epochs = 50, batch_size = 256, shuffle=True)
+model.fit(X_train_indices, y_oh_train, epochs = 400, batch_size = 256, shuffle=True, callbacks=[keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.0001, patience=10, verbose=0, mode='min')])
 print ("saving...")
 model.save('tp.h5')
 
 
-X_test_indices = sentences_to_indices(X_test, word_to_index, max_len = maxLen)
-Y_test_oh = convert_to_one_hot(Y_test, C = 5)
+X_test_indices = sentences_to_indices(X_test, word_to_index, max_len = max_len)
+# Y_test_oh = convert_to_one_hot(Y_test, C = 5)
 
 print ("Evaluating test...")
 loss, acc = model.evaluate(X_test_indices, y_oh_test)
