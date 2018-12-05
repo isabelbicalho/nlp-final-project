@@ -4,26 +4,76 @@ import re
 from keras import backend as K
 
 from sklearn.model_selection import train_test_split
-from keras.models import Model
-from keras.layers import Dense, Input, Dropout, LSTM, Activation
+from keras.models import Model, Sequential
+from keras.layers import Dense, Input, Dropout, LSTM, Activation, SpatialDropout1D, MaxPooling1D, Flatten, Conv1D
+from keras.optimizers import Adam
 from keras.layers.embeddings import Embedding
 from keras.preprocessing import sequence
 from keras.initializers import glorot_uniform
+from nltk.corpus import stopwords
+import pandas as pd 
+import gzip 
 
+def parse(path): 
+    g = gzip.open(path, 'rb') 
+    for l in g: 
+        yield eval(l) 
+
+def getDF(path): 
+    i = 0 
+    df = {} 
+    for d in parse(path): 
+        df[i] = d 
+        i += 1 
+    return pd.DataFrame.from_dict(df, orient='index') 
+
+
+
+def read_glove_vecs(glove_file):
+    with open(glove_file, 'r') as f:
+        words = set()
+        word_to_vec_map = {}
+        for line in f:
+            line = line.strip().split()
+            curr_word = line[0]
+            words.add(curr_word)
+            word_to_vec_map[curr_word] = np.array(line[1:], dtype=np.float64)
+        
+        i = 1
+        words_to_index = {}
+        index_to_words = {}
+        for w in sorted(words):
+            words_to_index[w] = i
+            index_to_words[i] = w
+            i = i + 1
+    words_to_index['unk'] = 1
+    index_to_words[1] = 'unk'
+    return words_to_index, index_to_words, word_to_vec_map
 
 
 def read_input(filename, sep, X_title, y_title):
-    corpus = pd.read_csv(filename, sep=sep)
-    X = corpus.get(X_title).values
-    y = corpus.get(y_title).values
+    #corpus = pd.read_csv(filename, sep=sep)
+    #X = corpus.get(X_title).values
+    #y = corpus.get(y_title).values
+    df = getDF('../data/reviews_Video_Games_5.json.gz')
+    X = df.get('reviewText').values
+    y = df.get('overall').values
+    import pdb; pdb.set_trace()
     i_list = []
     for i in range(len(X)-1):
         if type(X[i]) != str or np.isnan(y[i]):
             i_list.append(i)
     X = np.delete(X, i_list)
     y = np.delete(y, i_list)
+    sw = set(stopwords.words('english'))
+    l = 0
     for x in X:
-        x = re.sub(r"[^a-zA-Z0-9]+", ' ', x)
+        l += len(x)
+        x = x.lower()
+        x = re.sub(r"[^a-zA-Z0-9\s]", '', x)
+        x = ' '.join([w for w in x.split() if w not in sw])
+    print ("MEDIA LENGTH")
+    print (l/len(X))
     return X, y
 
 
@@ -77,11 +127,26 @@ def sentences_to_indices(X, word_to_index, max_len):
             try:
                 X_indices[i, j] = word_to_index[w]
             except KeyError:
-                X_indices[i, j] = word_to_index['-OOV-']
+                X_indices[i, j] = word_to_index['unk']
             # Increment j to j + 1
             j = j + 1
             
     return X_indices
+
+
+def pretrained_embedding_layer(word_to_vec_map, word_to_index, max_len):
+    vocab_len = len(word_to_index) + 1
+    emb_dim   = 50
+    
+    emb_matrix = np.zeros((vocab_len, emb_dim))
+
+    for word, index in word_to_index.items():
+        emb_matrix[index, :] = word_to_vec_map[word]
+
+    embedding_layer = Embedding(vocab_len, emb_dim, input_length=max_len, trainable=False)
+    embedding_layer.build((None,))
+    embedding_layer.set_weights([emb_matrix])
+    return embedding_layer
 
 
 def index_map(sentences):
@@ -91,14 +156,14 @@ def index_map(sentences):
             words.add(word.lower())
     word2index = {word: i + 2 for i, word in enumerate(list(words))}
     word2index['-PAD-'] = 0 # Padding
-    word2index['-OOV-'] = 1 # Out of vocabulary
+    #word2index['-OOV-'] = 1 # Out of vocabulary
     index2word = {i + 2: word for i, word in enumerate(list(words))}
     index2word[0] = '-PAD-' # Padding
-    index2word[1] = '-OOV-' # Out of vocabulary
+    #index2word[1] = '-OOV-' # Out of vocabulary
     return word2index, index2word
 
 
-def build_model(input_shape, word_to_index):
+def build_model(input_shape, word_to_vec_map, word_to_index):
     """
     Function creating the model's graph.
     
@@ -115,29 +180,195 @@ def build_model(input_shape, word_to_index):
     sentence_indices = Input(input_shape, dtype=np.int32)
     
     # Create the embedding layer
-    embedding_layer = Embedding(len(word_to_index), 32)
+    # embedding_layer = Embedding(len(word_to_index), 32)
+    embedding_layer = pretrained_embedding_layer(word_to_vec_map, word_to_index)
     
     # Propagate sentence_indices through your embedding layer, you get back the embeddings
-    embeddings = embedding_layer(sentence_indices)   
-    
-    # Propagate the embeddings through an LSTM layer with 128-dimensional hidden state
-    # Be careful, the returned output should be a batch of sequences.
-    X = LSTM(128, return_sequences=True)(embeddings)
-    # Add dropout with a probability of 0.5
-    X = Dropout(0.5)(X)
-    # Propagate X trough another LSTM layer with 128-dimensional hidden state
-    # Be careful, the returned output should be a single hidden state, not a batch of sequences.
-    X = LSTM(128)(X)
-    # Add dropout with a probability of 0.5
-    X = Dropout(0.5)(X)
-    # Propagate X through a Dense layer with softmax activation to get back a batch of 5-dimensional vectors.
-    X = Dense(5)(X)
-    # Add a softmax activation
-    X = Activation('softmax')(X)
+    # embeddings = embedding_layer(sentence_indices)   
+    # 
+    # # Propagate the embeddings through an LSTM layer with 128-dimensional hidden state
+    # # Be careful, the returned output should be a batch of sequences.
+    # X = LSTM(128, return_sequences=True)(embeddings)
+    # # Add dropout with a probability of 0.5
+    # # X = Dropout(0.5)(X)
+    # X = SpatialDropout1D(0.2)(X)
+    # # Propagate X trough another LSTM layer with 128-dimensional hidden state
+    # # Be careful, the returned output should be a single hidden state, not a batch of sequences.
+    # X = LSTM(128, dropout=0.2, recurrent_dropout=0.2)(X)
+    # # Add dropout with a probability of 0.5
+    # # X = Dropout(0.5)(X)
+    # # Propagate X through a Dense layer with softmax activation to get back a batch of 5-dimensional vectors.
+    # X = Dense(5)(X)
+    # # Add a softmax activation
+    # X = Activation('softmax')(X)
     
     # Create Model instance which converts sentence_indices into X.
-    model = Model(inputs=sentence_indices, outputs=X)
+    #model = Sequential(inputs=sentence_indices, outputs=X)
+    model = Sequential()
+    #model.add(sentence_indices)
+    model.add(embedding_layer)
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=32, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(Flatten())
+    model.add(Dense(250, activation='relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(5, activation='softmax'))
+    # model.add(LSTM(128, return_sequences=True))
+    # model.add(SpatialDropout1D(0.2))
+    # model.add(LSTM(128, dropout=0.2, recurrent_dropout=0.2))
+    # model.add(Dense(5))
+    # model.add(Activation('softmax'))
+    return model
+
+
+def conv_model(input_shape, word_to_vec_map, word_to_index):
+    """
+    Function creating the model's graph.
     
+    Arguments:
+    input_shape -- shape of the input, usually (max_len,)
+    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional vector representation
+    word_to_index -- dictionary mapping from words to their indices in the vocabulary (400,001 words)
+
+    Returns:
+    model -- a model instance in Keras
+    """
+
+    # Define sentence_indices as the input of the graph, it should be of shape input_shape and dtype 'int32' (as it contains indices).
+    sentence_indices = Input(input_shape, dtype=np.int32)
+    
+    # Create the embedding layer
+    embedding_layer = pretrained_embedding_layer(word_to_vec_map, word_to_index, input_shape[0])
+    model = Sequential()
+    #model.add(sentence_indices)
+    model.add(embedding_layer)
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(5, activation='softmax'))
+    return model
+
+
+def lstm_model(input_shape, word_to_vec_map, word_to_index):
+    """
+    Function creating the model's graph.
+    
+    Arguments:
+    input_shape -- shape of the input, usually (max_len,)
+    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional vector representation
+    word_to_index -- dictionary mapping from words to their indices in the vocabulary (400,001 words)
+
+    Returns:
+    model -- a model instance in Keras
+    """
+
+    # Define sentence_indices as the input of the graph, it should be of shape input_shape and dtype 'int32' (as it contains indices).
+    sentence_indices = Input(input_shape, dtype=np.int32)
+    
+    # Create the embedding layer
+    # embedding_layer = Embedding(len(word_to_index), 32)
+    embedding_layer = pretrained_embedding_layer(word_to_vec_map, word_to_index)
+    
+    # Create Model instance which converts sentence_indices into X.
+    #model = Sequential(inputs=sentence_indices, outputs=X)
+    model = Sequential()
+    model.add(embedding_layer)
+    model.add(LSTM(200, return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(LSTM(200))
+    model.add(Dropout(0.3))
+    model.add(Dense(100, activation='relu'))
+    model.add(Dropout(0.3))
+    model.add(Dense(5))
+    model.add(Activation('softmax'))
+    return model
+
+
+def mixed_model(input_shape, word_to_vec_map, word_to_index):
+    """
+    Function creating the model's graph.
+    
+    Arguments:
+    input_shape -- shape of the input, usually (max_len,)
+    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional vector representation
+    word_to_index -- dictionary mapping from words to their indices in the vocabulary (400,001 words)
+
+    Returns:
+    model -- a model instance in Keras
+    """
+
+    # Define sentence_indices as the input of the graph, it should be of shape input_shape and dtype 'int32' (as it contains indices).
+    sentence_indices = Input(input_shape, dtype=np.int32)
+    
+    # Create the embedding layer
+    # embedding_layer = Embedding(len(word_to_index), 32)
+    embedding_layer = pretrained_embedding_layer(word_to_vec_map, word_to_index)
+    
+    # Create Model instance which converts sentence_indices into X.
+    #model = Sequential(inputs=sentence_indices, outputs=X)
+    model = Sequential()
+    model.add(embedding_layer)
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=32, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(LSTM(124, return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(Flatten())
+    #model.add(Dense(250, activation='relu'))
+    model.add(Dense(5, activation='softmax'))
+    #model.add(Dense(5))
+    #model.add(Activation('softmax'))
+    return model
+
+
+def mixed_model2(input_shape, word_to_vec_map, word_to_index):
+    """
+    Function creating the model's graph.
+    
+    Arguments:
+    input_shape -- shape of the input, usually (max_len,)
+    word_to_vec_map -- dictionary mapping every word in a vocabulary into its 50-dimensional vector representation
+    word_to_index -- dictionary mapping from words to their indices in the vocabulary (400,001 words)
+
+    Returns:
+    model -- a model instance in Keras
+    """
+
+    # Define sentence_indices as the input of the graph, it should be of shape input_shape and dtype 'int32' (as it contains indices).
+    sentence_indices = Input(input_shape, dtype=np.int32)
+    
+    # Create the embedding layer
+    # embedding_layer = Embedding(len(word_to_index), 32)
+    embedding_layer = pretrained_embedding_layer(word_to_vec_map, word_to_index)
+    
+    # Create Model instance which converts sentence_indices into X.
+    #model = Sequential(inputs=sentence_indices, outputs=X)
+    model = Sequential()
+    model.add(embedding_layer)
+    model.add(Dropout(0.3))
+    model.add(Conv1D(filters=64, kernel_size=3, padding='same', activation='relu'))
+    model.add(MaxPooling1D(pool_size=2))
+    model.add(Dropout(0.3))
+    model.add(LSTM(200, return_sequences=True))
+    model.add(Dropout(0.3))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dense(5, activation='softmax'))
+    #model.add(Dense(5))
+    #model.add(Activation('softmax'))
     return model
 
 
